@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LAN Share</title>
+<style>
+*{box-sizing:border-box}
+body{
+    margin:0;
+    font-family:Tahoma,Arial,sans-serif;
+    background:linear-gradient(135deg,#0f2027,#203a43,#2c5364);
+    min-height:100vh;
+    color:#fff;
+}
+.screen{
+    position:fixed;
+    inset:0;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    background:linear-gradient(135deg,#0f2027,#203a43,#2c5364);
+}
+.card{
+    width:min(420px,92vw);
+    background:#111;
+    padding:36px;
+    border-radius:18px;
+    box-shadow:0 20px 60px rgba(0,0,0,.45);
+    text-align:center;
+}
+.card h1{margin:0 0 10px}
+.card p{color:#aaa;font-size:14px;line-height:1.6}
+input[type=text]{
+    width:100%;
+    padding:13px 15px;
+    margin-top:14px;
+    border:0;
+    border-radius:9px;
+    background:#222;
+    color:#fff;
+    outline:none;
+    direction:ltr;
+}
+button{
+    border:0;
+    border-radius:9px;
+    padding:11px 18px;
+    cursor:pointer;
+    color:#fff;
+    background:#0088cc;
+}
+button:hover{filter:brightness(1.08)}
+.primary{background:#4caf50;width:100%;margin-top:14px}
+.status{min-height:20px;margin-top:14px;font-size:13px}
+.app{
+    display:none;
+    min-height:100vh;
+    max-width:1100px;
+    margin:auto;
+    padding:24px;
+}
+.header{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:12px;
+    margin-bottom:18px;
+}
+.brand h1{margin:0;font-size:28px}
+.brand p{margin:5px 0 0;color:#aaa;font-size:13px}
+.server-label{
+    background:rgba(0,0,0,.35);
+    padding:9px 12px;
+    border-radius:9px;
+    color:#bbb;
+    font-size:12px;
+    direction:ltr;
+}
+.panel{
+    background:rgba(0,0,0,.42);
+    border:1px solid rgba(255,255,255,.07);
+    border-radius:18px;
+    padding:20px;
+}
+.toolbar{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:12px;
+    margin-bottom:16px;
+}
+.toolbar h2{margin:0;font-size:18px}
+.actions{display:flex;gap:8px;flex-wrap:wrap}
+.file-input{display:none}
+.file-list{display:flex;flex-direction:column;gap:9px}
+.file{
+    display:flex;
+    align-items:center;
+    gap:12px;
+    padding:13px;
+    background:rgba(255,255,255,.055);
+    border-radius:11px;
+}
+.icon{font-size:24px}
+.file-main{flex:1;min-width:0}
+.file-name{
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+}
+.file-meta{font-size:12px;color:#999;margin-top:4px}
+.file-actions{display:flex;gap:7px}
+.download{background:#0088cc}
+.delete{background:#a33}
+.empty{
+    text-align:center;
+    color:#999;
+    padding:45px 10px;
+}
+.progress-wrap{
+    display:none;
+    margin-top:15px;
+    background:#222;
+    border-radius:8px;
+    overflow:hidden;
+}
+.progress{
+    width:0%;
+    height:8px;
+    background:#4caf50;
+    transition:width .15s;
+}
+@media(max-width:650px){
+    .app{padding:12px}
+    .header{align-items:flex-start;flex-direction:column}
+    .server-label{width:100%}
+    .file{align-items:flex-start}
+    .file-actions{flex-direction:column}
+}
+</style>
+</head>
+<body>
+
+<div class="screen" id="connectScreen">
+    <div class="card">
+        <h1>LAN Share</h1>
+        <p>Enter the IP address of the computer running the server.</p>
+
+        <input
+            id="ipInput"
+            type="text"
+            placeholder="Example: 192.168.1.10"
+            autocomplete="off"
+        >
+
+        <button class="primary" id="connectBtn" onclick="connectServer()">
+            Connect to Server
+        </button>
+
+        <div class="status" id="status"></div>
+    </div>
+</div>
+
+<div class="app" id="app">
+    <div class="header">
+        <div class="brand">
+            <h1>LAN Share</h1>
+            <p>Simple file sharing over your local network</p>
+        </div>
+        <div class="server-label" id="serverLabel"></div>
+    </div>
+
+    <div class="panel">
+        <div class="toolbar">
+            <h2>Shared Files</h2>
+
+            <div class="actions">
+                <label>
+                    <input
+                        class="file-input"
+                        id="fileInput"
+                        type="file"
+                        multiple
+                        onchange="uploadFiles()"
+                    >
+                    <button onclick="document.getElementById('fileInput').click()">
+                        + Upload Files
+                    </button>
+                </label>
+
+                <button onclick="loadFiles()">↻ Refresh</button>
+                <button onclick="changeServer()">⚙ Change Server</button>
+            </div>
+        </div>
+
+        <div class="progress-wrap" id="progressWrap">
+            <div class="progress" id="progress"></div>
+        </div>
+
+        <div class="file-list" id="fileList"></div>
+    </div>
+</div>
+
+<script>
+let SERVER = localStorage.getItem("lan_share_server") || "";
+
+function normalizeServer(value){
+    value = value.trim().replace(/^https?:\/\//i, "").replace(/\/+$/, "");
+
+    if(!value) return "";
+
+    if(!/:\d+$/.test(value)){
+        value += ":8000";
+    }
+
+    return "http://" + value;
+}
+
+function setStatus(text, type=""){
+    const el = document.getElementById("status");
+    el.textContent = text;
+    el.style.color =
+        type === "error" ? "#ff5555" :
+        type === "success" ? "#4caf50" :
+        "#ffaa00";
+}
+
+function connectServer(){
+    const input = document.getElementById("ipInput");
+    const address = normalizeServer(input.value);
+
+    if(!address){
+        setStatus("Please enter the server IP address.", "error");
+        return;
+    }
+
+    setStatus("Connecting...", "loading");
+
+    fetch(address + "/")
+        .then(response => {
+            if(!response.ok) throw new Error("Server unavailable");
+            return response.json();
+        })
+        .then(() => {
+            SERVER = address;
+            localStorage.setItem("lan_share_server", SERVER);
+
+            document.getElementById("connectScreen").style.display = "none";
+            document.getElementById("app").style.display = "block";
+            document.getElementById("serverLabel").textContent = SERVER;
+
+            loadFiles();
+        })
+        .catch(() => {
+            setStatus("Could not connect to the server.", "error");
+        });
+}
+
+function changeServer(){
+    document.getElementById("app").style.display = "none";
+    document.getElementById("connectScreen").style.display = "flex";
+
+    document.getElementById("ipInput").value =
+        SERVER.replace(/^https?:\/\//, "").replace(/:8000$/, "");
+
+    setStatus("");
+    document.getElementById("ipInput").focus();
+}
+
+function formatSize(bytes){
+    if(bytes < 1024) return bytes + " B";
+    if(bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+    if(bytes < 1024 * 1024 * 1024) return (bytes / 1024 / 1024).toFixed(1) + " MB";
+    return (bytes / 1024 / 1024 / 1024).toFixed(2) + " GB";
+}
+
+function escapeHtml(value){
+    const div = document.createElement("div");
+    div.textContent = value;
+    return div.innerHTML;
+}
+
+function loadFiles(){
+    if(!SERVER) return;
+
+    fetch(SERVER + "/files")
+        .then(response => {
+            if(!response.ok) throw new Error();
+            return response.json();
+        })
+        .then(data => renderFiles(data.files || []))
+        .catch(() => {
+            document.getElementById("fileList").innerHTML =
+                '<div class="empty">Could not load files from the server.</div>';
+        });
+}
+
+function renderFiles(files){
+    const list = document.getElementById("fileList");
+
+    if(files.length === 0){
+        list.innerHTML = '<div class="empty">No files have been shared yet.</div>';
+        return;
+    }
+
+    list.innerHTML = files.map(file => `
+        <div class="file">
+            <div class="icon">📄</div>
+            <div class="file-main">
+                <div class="file-name" title="${escapeHtml(file.name)}">
+                    ${escapeHtml(file.name)}
+                </div>
+                <div class="file-meta">${formatSize(file.size)}</div>
+            </div>
+            <div class="file-actions">
+                <button class="download"
+                    onclick='downloadFile(${JSON.stringify(file.name)})'>
+                    Download
+                </button>
+                <button class="delete"
+                    onclick='deleteFile(${JSON.stringify(file.name)})'>
+                    Delete
+                </button>
+            </div>
+        </div>
+    `).join("");
+}
+
+function uploadFiles(){
+    const input = document.getElementById("fileInput");
+    const files = Array.from(input.files);
+
+    if(files.length === 0) return;
+
+    const progressWrap = document.getElementById("progressWrap");
+    const progress = document.getElementById("progress");
+
+    progressWrap.style.display = "block";
+    progress.style.width = "0%";
+
+    let index = 0;
+
+    function uploadNext(){
+        if(index >= files.length){
+            progress.style.width = "100%";
+            setTimeout(() => {
+                progressWrap.style.display = "none";
+                progress.style.width = "0%";
+            }, 600);
+            input.value = "";
+            loadFiles();
+            return;
+        }
+
+        const file = files[index];
+        const formData = new FormData();
+        formData.append("file", file);
+
+        const xhr = new XMLHttpRequest();
+
+        xhr.open("POST", SERVER + "/upload");
+
+        xhr.upload.onprogress = event => {
+            if(event.lengthComputable){
+                const current = event.loaded / event.total;
+                const overall = ((index + current) / files.length) * 100;
+                progress.style.width = overall + "%";
+            }
+        };
+
+        xhr.onload = () => {
+            if(xhr.status >= 200 && xhr.status < 300){
+                index++;
+                uploadNext();
+            }else{
+                alert("Upload failed: " + file.name);
+                index++;
+                uploadNext();
+            }
+        };
+
+        xhr.onerror = () => {
+            alert("Connection error while uploading: " + file.name);
+            index++;
+            uploadNext();
+        };
+
+        xhr.send(formData);
+    }
+
+    uploadNext();
+}
+
+function downloadFile(name){
+    window.location.href =
+        SERVER + "/download/" + encodeURIComponent(name);
+}
+
+function deleteFile(name){
+    if(!confirm(`Delete "${name}"?`)) return;
+
+    fetch(
+        SERVER + "/delete/" + encodeURIComponent(name),
+        {method:"DELETE"}
+    )
+    .then(response => {
+        if(!response.ok) throw new Error();
+        loadFiles();
+    })
+    .catch(() => {
+        alert("Could not delete the file.");
+    });
+}
+
+document.getElementById("ipInput").addEventListener("keypress", event => {
+    if(event.key === "Enter") connectServer();
+});
+
+if(SERVER){
+    document.getElementById("ipInput").value =
+        SERVER.replace(/^https?:\/\//, "").replace(/:8000$/, "");
+}
+</script>
+
+</body>
+</html>
